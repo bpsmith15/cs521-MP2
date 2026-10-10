@@ -3,17 +3,19 @@ import functools
 import torch
 import jax
 import jax.numpy as jnp
+import jax.profiler
+from torch.profiler import profile, ProfilerActivity
 from torch.utils.cpp_extension import load
 
 
 from myconv import ConvModel
 from myconv_jax import conv2d_manual_jax
 
-
 import matplotlib.pyplot as plt
 
 N, C = 4, 16
 runs = 20
+traced = set()   # backends we've already saved a trace for
 
 # kinda similar to the TIME macro in MP1
 def TIME(name, fn):
@@ -27,6 +29,18 @@ def TIME(name, fn):
     ms = total / runs * 1000
 
     print(f"Time taken for conv {name}: {ms} ms")
+
+    # get traces, only do one per
+    if name not in traced:
+        traced.add(name)
+        if name == "jax":
+            with jax.profiler.trace("trace_jax", create_perfetto_trace=True):
+                fn()
+        else:
+            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+                fn()
+            prof.export_chrome_trace(f"trace_{name}.json")
+            
     return ms
 
 t = time.perf_counter()
@@ -46,6 +60,18 @@ def run(H, K):
     # name -> time
     times = {}
 
+    # build jax versions of all the bits
+    xj, wj, bj = jnp.array(x.cpu()), jnp.array(w.cpu()), jnp.array(model.bias.detach().cpu())
+    f = jax.jit(functools.partial(conv2d_manual_jax, stride=1, padding=pad))
+
+    # test compile time
+    t = time.perf_counter()
+    f(xj, wj, bj).block_until_ready()
+    print(f"H={H} K={K} jax compile: {time.perf_counter() - t:.1f} s")
+
+    # get running time
+    times["jax"] = TIME("jax", lambda: f(xj, wj, bj).block_until_ready())
+
     with torch.no_grad():
         times["interpreter"] = TIME("interpreter", lambda: (model(x), torch.cuda.synchronize()))
         torch._dynamo.reset()
@@ -61,17 +87,6 @@ def run(H, K):
         times["inductor"] = TIME("inductor", lambda: (compiled(x), torch.cuda.synchronize()))
         times["cuda"] = TIME("cuda", lambda: (cuda_mod.conv_cuda(x, w, 1, pad), torch.cuda.synchronize()))
 
-    # build jax versions of all the bits
-    xj, wj, bj = jnp.array(x.cpu()), jnp.array(w.cpu()), jnp.array(model.bias.detach().cpu())
-    f = jax.jit(functools.partial(conv2d_manual_jax, stride=1, padding=pad))
-
-    # test compile time
-    t = time.perf_counter()
-    f(xj, wj, bj).block_until_ready()
-    print(f"H={H} K={K} jax compile: {time.perf_counter() - t:.1f} s")
-
-    # get running time
-    times["jax"] = TIME("jax", lambda: f(xj, wj, bj).block_until_ready())
     return times
 
 
@@ -92,5 +107,5 @@ def sweep(name, sizes, l, xlabel):
     plt.savefig(f"sweep_{name}.png", dpi=150)
 
 
-sweep("input", [16, 32, 64, 128, 256], lambda h: (h, 3), "input size H=W (K=3)")
+sweep("input", [64, 16, 32, 128, 256], lambda h: (h, 3), "input size H=W (K=3)")
 sweep("filter", [1, 3, 5, 7, 9], lambda k: (64, k), "filter size K (H=W=64)")
