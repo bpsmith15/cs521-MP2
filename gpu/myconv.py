@@ -60,11 +60,11 @@ class ConvModel(nn.Module):
         cols = self.im2col_manual(x)          
 
         # TO DO: 2) flatten self.weight into shape (C_out, C*KH*KW).
-        w = self.weight.reshape(C_out, C* self.kernel_size)
+        w = self.weight.reshape(C_out, C * self.kernel_size ** 2)
 
         # TO DO: 3) perform tiled matmul after required reshaping is done.
         L = self.out_h * self.out_w
-        A = cols.reshape(N * L, C * self.kernel_size)
+        A = cols.reshape(N * L, C * self.kernel_size ** 2)
         B = w.t()
         out = torch.matmul(A, B)
 

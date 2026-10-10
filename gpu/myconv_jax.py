@@ -29,9 +29,9 @@ def im2col_manual_jax(x, KH, KW, S, P, out_h, out_w):
         for kw in range(KW):
             cols.append(x_pad[:, :, kh : kh + S * out_h : S, kw : kw + S * out_w : S])
 
-    patches = jnp.stack(cols, axis=2)                       # (N, C, KH*KW, out_h, out_w)
+    patches = jnp.stack(cols, axis=2)
     patches = patches.reshape(N, C * KH * KW, out_h * out_w)
-    return patches.transpose(0, 2, 1)                       # (N, out_h*out_w, C*KH*KW)
+    return patches.transpose(0, 2, 1)
 
 def conv2d_manual_jax(x, weight, bias, stride=1, padding=1):
     '''
@@ -53,7 +53,7 @@ def conv2d_manual_jax(x, weight, bias, stride=1, padding=1):
     w = weight.reshape(C_out, C * KH * KW)
 
     # TO DO: 3) perform tiled matmul after required reshaping is done.
-    out = jnp.matmul(cols, w.T)                             # (N, out_h*out_w, C_out)
+    out = jnp.matmul(cols, w.T)
 
     # TO DO: 4) Add bias.
     out = out + bias
