@@ -24,8 +24,14 @@ def im2col_manual_jax(x, KH, KW, S, P, out_h, out_w):
     # TO DO: Convert input (x) into shape (N, out_h*out_w, C*KH*KW). 
     # Refer to Lecture 3 for implementing this operation.
     
-    # patches = ...
-    # return patches
+    cols = []
+    for kh in range(KH):
+        for kw in range(KW):
+            cols.append(x_pad[:, :, kh : kh + S * out_h : S, kw : kw + S * out_w : S])
+
+    patches = jnp.stack(cols, axis=2)                       # (N, C, KH*KW, out_h, out_w)
+    patches = patches.reshape(N, C * KH * KW, out_h * out_w)
+    return patches.transpose(0, 2, 1)                       # (N, out_h*out_w, C*KH*KW)
 
 def conv2d_manual_jax(x, weight, bias, stride=1, padding=1):
     '''
@@ -37,21 +43,25 @@ def conv2d_manual_jax(x, weight, bias, stride=1, padding=1):
     C_out, _, KH, KW = weight.shape
 
     # define your helper variables here
-    # out_h = ...
-    # out_w = ...
+    out_h = (H + 2 * padding - KH) // stride + 1
+    out_w = (W + 2 * padding - KW) // stride + 1
     
     # TO DO: 1) convert input (x) into shape (N, out_h*out_w, C*KH*KW).
-    # cols = im2col_manual_jax(x, KH, KW, stride, padding, out_h, out_w)
+    cols = im2col_manual_jax(x, KH, KW, stride, padding, out_h, out_w)
 
     # TO DO: 2) flatten self.weight into shape (C_out, C*KH*KW).
+    w = weight.reshape(C_out, C * KH * KW)
 
     # TO DO: 3) perform tiled matmul after required reshaping is done.
+    out = jnp.matmul(cols, w.T)                             # (N, out_h*out_w, C_out)
 
     # TO DO: 4) Add bias.
+    out = out + bias
 
     # TO DO: 5) reshape output into shape (N, C_out, out_h, out_w).
+    out = out.transpose(0, 2, 1).reshape(N, C_out, out_h, out_w)
 
-    #return out
+    return out
 
 if __name__ == "__main__":
     # Instantiate PyTorch model
@@ -82,4 +92,4 @@ if __name__ == "__main__":
     # Test your solution
     conv_ref = F.conv2d(x_torch, model.weight, model.bias, stride=1, padding=1)
     print("JAX --- shape check:", out_jax.shape == conv_ref.shape)
-    print("JAX --- correctness check:", torch.allclose(torch.from_numpy(np.array(out_jax)), conv_ref, atol=1e-1))
+    print("JAX --- correctness check:", torch.allclose(torch.from_numpy(np.array(out_jax)), conv_ref, atol=1e-4))

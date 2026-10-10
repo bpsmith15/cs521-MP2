@@ -19,8 +19,8 @@ class ConvModel(nn.Module):
         # TO DO: Define static shapes here. 
 
         # Precompute output size
-        # self.out_h = ...
-        # self.out_w = ...
+        self.out_h = (H + 2 * padding - kernel_size) // stride + 1
+        self.out_w = (W + 2 * padding - kernel_size) // stride + 1
 
         self.weight = nn.Parameter(torch.randn(out_channels, in_channels, kernel_size, kernel_size))
         self.bias = nn.Parameter(torch.zeros(out_channels))
@@ -40,30 +40,42 @@ class ConvModel(nn.Module):
         x_pad = F.pad(x, (P, P, P, P))
 
         # TO DO: Convert input (x) into shape (N, out_h*out_w, C*KH*KW). 
+        cols = []
+        for kh in range(KH):
+            for kw in range(KW):
+                cols.append(x_pad[:, :, kh : kh + S * out_h : S, kw : kw + S * out_w : S])
+
         # Refer to Lecture 3 for implementing this operation.
         
-        # patches = ...
-        # return patches
+        patches = torch.stack(cols, dim=2)
+        patches = patches.reshape(N, C * KH * KW, out_h * out_w).transpose(1, 2)
+        return patches
 
     def conv2d_manual(self, x):
         N = x.shape[0]
+        C = self.in_channels
         C_out = self.out_channels
-        KH = KW = self.kernel_size
 
         # TO DO: 1) convert input (x) into shape (N, out_h*out_w, C*KH*KW).
-        # cols = self.im2col_manual(x)          
+        cols = self.im2col_manual(x)          
 
         # TO DO: 2) flatten self.weight into shape (C_out, C*KH*KW).
+        w = self.weight.reshape(C_out, C* self.kernel_size)
 
         # TO DO: 3) perform tiled matmul after required reshaping is done.
+        L = self.out_h * self.out_w
+        A = cols.reshape(N * L, C * self.kernel_size)
+        B = w.t()
+        out = torch.matmul(A, B)
 
         # TO DO: 4) Add bias.
+        out = out + self.bias
 
         # TO DO: 5) reshape output into shape (N, C_out, out_h, out_w).
+        out = out.reshape(N, L, C_out).transpose(1, 2)
+        out = out.reshape(N, C_out, self.out_h, self.out_w)
 
-
-
-        #return out
+        return out
 
     def forward(self, x):
         return self.conv2d_manual(x)
